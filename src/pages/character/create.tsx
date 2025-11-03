@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import MobileLayout from '@/layouts/mobile';
 import Step1 from '@/components/character/step1';
