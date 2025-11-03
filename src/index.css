@@ -1,3 +1,5 @@
+@import "pretendard/dist/web/static/pretendard.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -5,11 +7,11 @@
 /* 글로벌 스타일 */
 @layer base {
   * {
-    @apply border-border;
+    @apply border-gray-200;
   }
   
   body {
-    @apply bg-background text-foreground;
+    @apply bg-gray-50 text-gray-900;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
   
@@ -19,14 +21,11 @@
 }
 
 @layer components {
-  /* 공통 컨테이너 */
-  .container {
-    @apply w-full mx-auto px-4 sm:px-6 lg:px-8;
-  }
-  
   /* 공통 버튼 스타일 */
   .btn {
-    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
+    @apply disabled:pointer-events-none disabled:opacity-50;
   }
   
   .btn-primary {
@@ -48,7 +47,9 @@
   
   /* 입력 필드 스타일 */
   .input {
-    @apply flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50;
+    @apply flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm;
+    @apply placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
   }
   
   /* 페이지 타이틀 */
