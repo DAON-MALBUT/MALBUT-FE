@@ -5,6 +5,7 @@ import CharacterInit from './pages/character/init';
 import CharacterCreate from './pages/character/create';
 import SplashPage from '@/pages/splash';
 import Permission from './pages/permission';
+import SignupInfo from './pages/signupInfo';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           <Route path='create' element={<CharacterCreate />} />
         </Route>
         <Route path="/permission" element={<Permission />} />
+        <Route path="/signup" element={<SignupInfo />} />
         <Route path="*" element={<div>404 Not Found</div>} />
       </Routes>
     </BrowserRouter>
