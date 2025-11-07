@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import { useVoiceStore } from '@/stores/voiceStore';
@@ -175,6 +176,158 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       if (activeInputId && activeInputId !== inputId && stopCurrentInput) {
         console.log('[handleMicrophoneClick] stopping other input:', activeInputId);
         stopCurrentInput();
+      }
+
+      // 비디오가 있으면 재생 시도
+      if (videoUrl && videoRef.current) {
+        videoRef.current.play().catch((error) => {
+          console.warn('비디오 재생 실패, 바로 음성 인식 시작:', error);
+          handleVideoEnd();
+        });
+      } else {
+        // 비디오 없으면 바로 음성 인식 시작
+        handleVideoEnd();
+      }
+    };
+
+    // 컴포넌트 언마운트 시 정리
+    useEffect(() => {
+      return () => {
+        console.log('[unmount] cleaning up');
+        if (silenceTimerRef.current) {
+          window.clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+        try {
+          SpeechRecognition.stopListening();
+        } catch (e) {
+          // 무시
+        }
+        isActiveRef.current = false;
+      };
+    }, []);
+
+    const [isListening, setIsListening] = useState(false);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const silenceTimerRef = useRef<number | null>(null);
+    const lastTranscriptRef = useRef<string>('');
+    const isActiveRef = useRef<boolean>(false);
+
+    const {
+      transcript,
+      listening, // from hook (may not be used directly but available)
+      resetTranscript,
+      browserSupportsSpeechRecognition
+    } = useSpeechRecognition();
+
+    // 안정적인 stop 함수 (useCallback 으로 고정)
+    const stopListening = useCallback(() => {
+      console.log('[stopListening] called');
+      try {
+        SpeechRecognition.stopListening();
+      } catch (e) {
+        console.warn('[stopListening] SpeechRecognition.stopListening() failed', e);
+      }
+      setIsListening(false);
+      isActiveRef.current = false;
+      if (silenceTimerRef.current) {
+        window.clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+    }, []);
+
+    // transcript 변경 + isListening 상태를 관찰하여 5초 무응답 자동종료 처리
+    useEffect(() => {
+      // 로그로 상태 확인
+      console.log('[useEffect transcript] transcript=', transcript, ' isActive=', isActiveRef.current, ' isListening=', isListening, ' lastTranscript=', lastTranscriptRef.current, ' timer=', silenceTimerRef.current);
+
+      if (!isActiveRef.current) {
+        // 활성화(이 input에 대한 음성 인식)가 아니면 무시
+        return;
+      }
+
+      // 만약 새 transcript가 들어왔고 이전과 다르면 값 업데이트 + 타이머 리셋
+      if (transcript && transcript !== lastTranscriptRef.current) {
+        console.log('[useEffect] new transcript detected:', transcript);
+        lastTranscriptRef.current = transcript;
+
+        // 부모 onChange 호출 (synthetic event)
+        if (onChange) {
+          const syntheticEvent = {
+            target: { value: transcript },
+            currentTarget: { value: transcript },
+          } as React.ChangeEvent<HTMLInputElement>;
+          onChange(syntheticEvent);
+        }
+
+        // 기존 타이머가 있으면 클리어
+        if (silenceTimerRef.current) {
+          window.clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+
+        // 새 5초 타이머 시작 (마지막 말 이후 5초 무응답시 종료)
+        silenceTimerRef.current = window.setTimeout(() => {
+          console.log('🕒 5초 무응답 탐지 - 자동 종료');
+          stopListening();
+        }, 5000);
+
+        return;
+      }
+
+      // transcript가 비어있고(아직 아무 말 안함) && 수신 중이면 최초 5초 타이머 시작
+      if (!transcript && isListening && !silenceTimerRef.current) {
+        console.log('[useEffect] no transcript yet, starting initial 5s timer');
+        silenceTimerRef.current = window.setTimeout(() => {
+          console.log('🕒 초기 5초 무응답 - 자동 종료');
+          stopListening();
+        }, 5000);
+      }
+      // cleanup는 따로 필요 없음 (타이머는 stopListening에서 정리 혹은 다음 new transcript에서 정리)
+    }, [transcript, isListening, onChange, stopListening]);
+
+    // 비디오 재생 완료 후 음성 인식 시작
+    const handleVideoEnd = () => {
+      if (!browserSupportsSpeechRecognition) {
+        console.warn('브라우저가 음성 인식을 지원하지 않습니다.');
+        return;
+      }
+
+      console.log('[handleVideoEnd] start listening');
+      resetTranscript();
+      lastTranscriptRef.current = '';
+      isActiveRef.current = true; // 이 input을 활성화
+      try {
+        SpeechRecognition.startListening({
+          continuous: true,
+          language: 'ko-KR'
+        });
+      } catch (e) {
+        console.warn('[handleVideoEnd] startListening failed', e);
+      }
+      setIsListening(true);
+
+      // 기존 타이머가 있으면 제거하고 새로 시작 (중복 방지)
+      if (silenceTimerRef.current) {
+        window.clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      silenceTimerRef.current = window.setTimeout(() => {
+        console.log('🕒 handleVideoEnd initial 5s timer expired -> stop');
+        stopListening();
+      }, 5000);
+    };
+
+    // 마이크 버튼 클릭 핸들러
+    const handleMicrophoneClick = () => {
+      if (!browserSupportsSpeechRecognition) {
+        alert('브라우저가 음성 인식을 지원하지 않습니다.');
+        return;
+      }
+
+      if (isListening) {
+        stopListening();
+        return;
       }
 
       // 비디오가 있으면 재생 시도

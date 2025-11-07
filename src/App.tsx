@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
 import CharacterList from './pages/character/list';
 import CharacterInit from './pages/character/init';
 import CharacterCreate from './pages/character/create';
