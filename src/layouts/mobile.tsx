@@ -23,7 +23,7 @@ const MobileLayout: React.FC<MobileLayoutProps> = ({ children, showNavBar = true
         <Header />
 
         {/* 실제 앱 컨텐츠 */}
-        <div className={`pt-11 px-6 h-full overflow-y-auto ${showNavBar ? 'pb-20' : ''}`}>
+        <div className={`pt-11 px-6 h-full overflow-y-auto ${showNavBar ? 'pb-20' : 'pb-0'}`}>
           {children}
         </div>
 
