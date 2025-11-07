@@ -1,9 +1,13 @@
 import { useState, useRef } from 'react';
 import MobileLayout from '@/layouts/mobile';
-import Button from '@/components/button';
-import Input from '@/components/input';
+import Step1 from '@/components/character/init/step1';
+import Step2 from '@/components/character/init/step2';
+import Step3 from '@/components/character/init/step3';
+import Loading from '@/components/character/init/loading';
+import Complete from '@/components/character/init/complete';
 
 export default function CharacterInit() {
+  const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -11,6 +15,8 @@ export default function CharacterInit() {
     relationship: '',
   });
   const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [selectedPersonality, setSelectedPersonality] = useState('');
+  const [audioFile, setAudioFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleInputChange = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -36,141 +42,102 @@ export default function CharacterInit() {
   };
 
   const handleNext = () => {
-    console.log('다음 페이지로 이동', formData);
-    // 여기에 라우팅 로직 추가
+    if (currentStep === 1) {
+      setCurrentStep(2);
+    } else if (currentStep === 2) {
+      setCurrentStep(3);
+    } else if (currentStep === 3) {
+      console.log('완료', { formData, selectedPersonality, audioFile });
+      // 여기에 최종 완료 로직 추가
+    }
   };
+  const handlePrev = () =>{
+    setCurrentStep((prev) => Math.max(prev - 1, 1));
+  }
 
   const handleDefaultCharacter = () => {
     console.log('기본 캐릭터로 시작하기');
     // 여기에 기본 캐릭터 설정 로직 추가
   };
 
-  const isFormValid = formData.name && formData.phone && formData.birthDate && formData.relationship;
+  const handlePersonalitySelect = (personality: string) => {
+    setSelectedPersonality(personality);
+  };
+
+  const handleAudioFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAudioFile(file);
+    }
+  };
+
+  const handleSkip = () => {
+    console.log('건너뛰기', { formData, selectedPersonality });
+    setCurrentStep(4); // 로딩 화면으로 이동
+  };
+
+  const handleComplete = () => {
+    console.log('완료', { formData, selectedPersonality, audioFile });
+    setCurrentStep(4); // 로딩 화면으로 이동
+  };
+
+  const handleLoadingComplete = () => {
+    setCurrentStep(5); // Complete 화면으로 이동
+  };
+
+  const handleFinalConfirm = () => {
+    console.log('최종 확인', { formData, selectedPersonality, audioFile });
+    // 여기에 최종 확인 후 라우팅 로직 추가 (예: 캐릭터 리스트로 이동)
+  };
+
+  const isFormValid = !!(
+    formData.name &&
+    formData.phone &&
+    formData.birthDate &&
+    formData.relationship
+  );
+
+  const isStep2Valid = !!selectedPersonality;
+  const isStep3Valid = !!audioFile;
 
   return (
     <MobileLayout showNavBar={false}>
-      <div className="flex flex-col h-full">
-        {/* 상단 타이틀 영역 */}
-        <div className="pt-8 px-4">
-          <h1 className="text-[24px] font-semibold leading-[28.64px] text-[#111111] mb-2 tracking-tight" style={{ letterSpacing: '-0.48px' }}>
-            통화할 캐릭터를 만들어주세요
-          </h1>
-          <p className="text-[16px] font-normal leading-[22.4px] text-[#AAAAAA]">
-            이후에도 추가, 수정, 삭제할 수 있어요
-          </p>
-        </div>
-
-        {/* 프로필 이미지 영역 */}
-        <div className="mt-12 flex justify-center relative">
-          <div className="relative">
-            {/* 프로필 배경 */}
-            <div 
-              className="w-16 h-16 rounded-full bg-[#F9FAFB] border border-[#AAAAAA] border-opacity-30 flex items-center justify-center overflow-hidden cursor-pointer"
-              onClick={handleImageClick}
-            >
-              {profileImage ? (
-                <img 
-                  src={profileImage} 
-                  alt="프로필"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <img 
-                  src="/icon/people.svg" 
-                  alt="프로필"
-                  className="w-10 h-10"
-                />
-              )}
-            </div>
-            
-            {/* 숨겨진 파일 입력 */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
-            
-            {/* 카메라 아이콘 */}
-            <button 
-              onClick={handleImageClick}
-              className="absolute bottom-0 right-0 w-[27px] h-[27px] rounded-full bg-[#F9FAFB] border border-[#AAAAAA] border-opacity-30 flex items-center justify-center"
-            >
-              <img 
-                src="/icon/camera_mini.svg" 
-                alt="사진 업로드"
-                className="w-[17px] h-[17px]"
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* 입력 폼 영역 */}
-        <div className="mt-12 px-4 space-y-6">
-          <Input
-            label="이름"
-            value={formData.name}
-            onChange={handleInputChange('name')}
-            fullWidth
-            placeholder="이름"
-          />
-
-          <Input
-            label="휴대전화"
-            value={formData.phone}
-            onChange={handleInputChange('phone')}
-            fullWidth
-            placeholder="전화번호"
-          />
-
-          <Input
-            label="생년월일"
-            value={formData.birthDate}
-            onChange={handleInputChange('birthDate')}
-            fullWidth
-            placeholder="생년월일 입력"
-          />
-
-          <Input
-            label="관계"
-            value={formData.relationship}
-            onChange={handleInputChange('relationship')}
-            fullWidth
-            placeholder="캐릭터와의 관계"
-          />
-        </div>
-
-        {/* 하단 버튼 영역 */}
-        <div className="mt-auto pb-8 px-4">
-          {/* 구분선 */}
-          <div className="flex items-center gap-2 mb-4">
-            <div className="flex-1 h-[1px] bg-[#AAAAAA] rounded-full" />
-            <span className="text-[15px] font-normal leading-[21px] text-[#AAAAAA]">또는</span>
-            <div className="flex-1 h-[1px] bg-[#AAAAAA] rounded-full" />
-          </div>
-
-          {/* 기본 캐릭터로 시작하기 버튼 */}
-          <div className="mb-4">
-            <Button
-              status="outlined"
-              fullWidth
-              onClick={handleDefaultCharacter}
-            >
-              기본 캐릭터로 시작하기
-            </Button>
-          </div>
-
-          {/* 다음 버튼 */}
-          <Button
-            status={isFormValid ? 'primary' : 'disabled'}
-            fullWidth
-            onClick={handleNext}
-          >
-            다음
-          </Button>
-        </div>
-      </div>
+      {currentStep === 1 && (
+        <Step1 
+          formData={formData}
+          profileImage={profileImage}
+          onInputChange={handleInputChange}
+          onImageUpload={handleImageUpload}
+          onImageClick={handleImageClick}
+          onNext={handleNext}
+          onDefaultCharacter={handleDefaultCharacter}
+          isFormValid={isFormValid}
+        />
+      )}
+      {currentStep === 2 && (
+        <Step2
+          onPrev={handlePrev}
+          selectedPersonality={selectedPersonality}
+          onPersonalitySelect={handlePersonalitySelect}
+          onNext={handleNext}
+          isNextEnabled={isStep2Valid}
+        />
+      )}
+      {currentStep === 3 && (
+        <Step3
+          audioFile={audioFile}
+          onFileUpload={handleAudioFileUpload}
+          onSkip={handleSkip}
+          onComplete={handleComplete}
+          isCompleteEnabled={isStep3Valid}
+        />
+      )}
+      {currentStep === 4 && (
+        <Loading onComplete={handleLoadingComplete} />
+      )}
+      {currentStep === 5 && (
+        <Complete onConfirm={handleFinalConfirm} />
+      )}
     </MobileLayout>
   );
 }

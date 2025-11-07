@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+import { useVoiceStore } from '@/stores/voiceStore';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -30,12 +31,16 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     ref
   ) => {
     const containerWidth = fullWidth ? 'w-full' : 'w-[343px]';
+    const inputId = useId(); // 각 Input의 고유 ID
 
     const [isListening, setIsListening] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
     const silenceTimerRef = useRef<number | null>(null);
     const lastTranscriptRef = useRef<string>('');
     const isActiveRef = useRef<boolean>(false);
+
+    // Zustand store
+    const { activeInputId, setActiveInputId, stopCurrentInput, setStopCurrentInput } = useVoiceStore();
 
     const {
       transcript,
@@ -46,7 +51,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
 
     // 안정적인 stop 함수 (useCallback 으로 고정)
     const stopListening = useCallback(() => {
-      console.log('[stopListening] called');
+      console.log('[stopListening] called for inputId:', inputId);
       try {
         SpeechRecognition.stopListening();
       } catch (e) {
@@ -58,15 +63,21 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         window.clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = null;
       }
-    }, []);
+      
+      // 전역 상태 초기화 (현재 활성화된 input이 이 input일 경우만)
+      if (activeInputId === inputId) {
+        setActiveInputId(null);
+        setStopCurrentInput(null);
+      }
+    }, [inputId, activeInputId, setActiveInputId, setStopCurrentInput]);
 
     // transcript 변경 + isListening 상태를 관찰하여 5초 무응답 자동종료 처리
     useEffect(() => {
       // 로그로 상태 확인
-      console.log('[useEffect transcript] transcript=', transcript, ' isActive=', isActiveRef.current, ' isListening=', isListening, ' lastTranscript=', lastTranscriptRef.current, ' timer=', silenceTimerRef.current);
+      console.log('[useEffect transcript] inputId=', inputId, ' transcript=', transcript, ' isActive=', isActiveRef.current, ' isListening=', isListening, ' lastTranscript=', lastTranscriptRef.current, ' timer=', silenceTimerRef.current);
 
-      if (!isActiveRef.current) {
-        // 활성화(이 input에 대한 음성 인식)가 아니면 무시
+      // 현재 활성화된 input이 아니면 무시
+      if (!isActiveRef.current || activeInputId !== inputId) {
         return;
       }
 
@@ -108,19 +119,24 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         }, 5000);
       }
       // cleanup는 따로 필요 없음 (타이머는 stopListening에서 정리 혹은 다음 new transcript에서 정리)
-    }, [transcript, isListening, onChange, stopListening]);
+    }, [transcript, isListening, onChange, stopListening, inputId, activeInputId]);
 
     // 비디오 재생 완료 후 음성 인식 시작
-    const handleVideoEnd = () => {
+    const handleVideoEnd = useCallback(() => {
       if (!browserSupportsSpeechRecognition) {
         console.warn('브라우저가 음성 인식을 지원하지 않습니다.');
         return;
       }
 
-      console.log('[handleVideoEnd] start listening');
+      console.log('[handleVideoEnd] start listening for inputId:', inputId);
       resetTranscript();
       lastTranscriptRef.current = '';
       isActiveRef.current = true; // 이 input을 활성화
+      
+      // 전역 상태 업데이트
+      setActiveInputId(inputId);
+      setStopCurrentInput(() => stopListening);
+      
       try {
         SpeechRecognition.startListening({
           continuous: true,
@@ -140,7 +156,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         console.log('🕒 handleVideoEnd initial 5s timer expired -> stop');
         stopListening();
       }, 5000);
-    };
+    }, [browserSupportsSpeechRecognition, resetTranscript, inputId, setActiveInputId, setStopCurrentInput, stopListening]);
 
     // 마이크 버튼 클릭 핸들러
     const handleMicrophoneClick = () => {
@@ -149,9 +165,16 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
         return;
       }
 
-      if (isListening) {
+      // 현재 이 input이 활성화 중이면 중지
+      if (isListening && activeInputId === inputId) {
         stopListening();
         return;
+      }
+
+      // 다른 input이 활성화 중이면 먼저 중지
+      if (activeInputId && activeInputId !== inputId && stopCurrentInput) {
+        console.log('[handleMicrophoneClick] stopping other input:', activeInputId);
+        stopCurrentInput();
       }
 
       // 비디오가 있으면 재생 시도

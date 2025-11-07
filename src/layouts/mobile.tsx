@@ -1,6 +1,6 @@
 import React from 'react'
 import Header from '@/components/header'
-
+import NavBar from '@/components/navBar'
 
 interface MobileLayoutProps {
   children: React.ReactNode
@@ -29,9 +29,7 @@ const MobileLayout: React.FC<MobileLayoutProps> = ({ children, showNavBar = true
 
         {/* 하단 NavBar */}
         {showNavBar && (
-          <div className="px-6 absolute bottom-0 left-0 w-full h-16 bg-white border-t border-gray-200 flex justify-around items-center">
-            
-          </div>
+          <NavBar />
         )}
       </div>
     </div>
