@@ -79,7 +79,7 @@ export default function SignupInfo() {
                 />
               ) : (
                 <img
-                  src="/icon/people.svg"
+                  src="/icon/person.svg"
                   alt="프로필"
                   className="w-10 h-10"
                 />
