@@ -7,7 +7,7 @@ export default function NavBar() {
   const location = useLocation();
 
   const navItems = [
-    { id: 'home', icon: 'home.svg', label: '홈', path: '/' },
+    { id: 'home', icon: 'home.svg', label: '홈', path: '/home' },
     { id: 'friend', icon: 'people.svg', label: '친구', path: '/friends' },
     { id: 'call', icon: 'call.svg', label: '전화', path: '/call' },
     { id: 'setting', icon: 'setting.svg', label: '설정', path: '/settings' },
@@ -30,7 +30,9 @@ export default function NavBar() {
               alt={item.label}
               className="w-full h-full object-contain"
               style={{
-                filter: isActive(item.path) ? 'none' : 'brightness(0) saturate(100%) invert(71%) sepia(0%) saturate(0%) hue-rotate(201deg) brightness(92%) contrast(87%)',
+                filter: isActive(item.path) 
+                  ? 'brightness(0) saturate(100%) invert(47%) sepia(79%) saturate(2476%) hue-rotate(346deg) brightness(104%) contrast(97%)' 
+                  : 'brightness(0) saturate(100%) invert(71%) sepia(0%) saturate(0%) hue-rotate(201deg) brightness(92%) contrast(87%)',
               }}
             />
           </div>
