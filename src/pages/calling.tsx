@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import MobileLayout from '@/layouts/mobile';
-import { callApi, characterApi, apiClient, elevenLabsApi } from '@/api/client';
+import { callApi, characterApi, apiClient } from '@/api/client';
 import { CallWebSocket, base64ToBlob } from '@/utils/websocket';
 import type { 
   TranscriptionMessage, 
@@ -22,11 +23,19 @@ export default function Calling() {
   const location = useLocation();
   const state = location.state as CallingState;
   
+  const {
+    transcript,
+    finalTranscript,
+    interimTranscript,
+    listening,
+    resetTranscript,
+    browserSupportsSpeechRecognition
+  } = useSpeechRecognition();
+  
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [transcription, setTranscription] = useState('');
   const [aiResponse, setAiResponse] = useState('');
@@ -34,17 +43,73 @@ export default function Calling() {
   const audioRef = useRef<HTMLAudioElement>(null);
   const wsRef = useRef<CallWebSocket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const callStartTimeRef = useRef<Date | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const silenceTimeoutRef = useRef<number | null>(null);
   const canListenRef = useRef<boolean>(true);
+  const lastSentTranscriptRef = useRef<string>('');
+  const silenceTimerRef = useRef<number | null>(null);
 
   const characterId = state?.characterId || '';
   const characterName = state?.characterName || '알 수 없음';
   const characterImage = state?.characterImage || '';
   const phoneNumber = state?.phoneNumber || '';
+
+  // 브라우저가 음성 인식을 지원하지 않는 경우
+  useEffect(() => {
+    if (!browserSupportsSpeechRecognition) {
+      alert('브라우저가 음성 인식을 지원하지 않습니다.');
+      navigate('/home');
+    }
+  }, [browserSupportsSpeechRecognition, navigate]);
+
+  // transcript 변경 감지 및 전송
+  useEffect(() => {
+    if (!wsRef.current || !canListenRef.current || isAiSpeaking) return;
+
+    // interim transcript가 있으면 화면에 표시 (아직 전송하지 않음)
+    if (interimTranscript) {
+      console.log('🎤 Interim:', interimTranscript);
+      setTranscription(transcript); // 전체 transcript 표시 (final + interim)
+      
+      // 침묵 타이머 리셋
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      
+      // 1.5초 침묵 후 전송
+      silenceTimerRef.current = window.setTimeout(() => {
+        if (transcript && transcript !== lastSentTranscriptRef.current) {
+          console.log('📤 Sending after silence:', transcript);
+          wsRef.current?.sendTextInput(transcript);
+          lastSentTranscriptRef.current = transcript;
+          setTranscription(transcript);
+          resetTranscript();
+        }
+      }, 1800);
+    }
+    
+    // final transcript가 있으면 즉시 전송
+    if (finalTranscript && finalTranscript !== lastSentTranscriptRef.current) {
+      console.log('✅ Final transcript:', finalTranscript);
+      
+      // 침묵 타이머 취소
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      
+      wsRef.current.sendTextInput(finalTranscript);
+      lastSentTranscriptRef.current = finalTranscript;
+      setTranscription(finalTranscript);
+      
+      // 약간의 지연 후 리셋 (다음 입력 준비)
+      setTimeout(() => {
+        resetTranscript();
+        lastSentTranscriptRef.current = '';
+      }, 500);
+    }
+  }, [transcript, finalTranscript, interimTranscript, isAiSpeaking, resetTranscript]);
 
   // 통화 세션 시작 및 WebSocket 연결
   useEffect(() => {
@@ -85,32 +150,40 @@ export default function Calling() {
           const audioMsg = msg as AIResponseAudioMessage;
           console.log('🔊 AI Response Audio received:', audioMsg.audio_url);
           
-          // AI 응답 시작 - 마이크 비활성화
+          // AI 응답 시작 - 음성 인식 중지
           canListenRef.current = false;
           setIsAiSpeaking(true);
-          
-          // 진행 중인 녹음 중지
-          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            mediaRecorderRef.current.stop();
-            audioChunksRef.current = []; // 녹음 데이터 버리기
-          }
+          SpeechRecognition.stopListening();
+          resetTranscript();
           
           if (audioRef.current && audioMsg.audio_data) {
             const blob = base64ToBlob(audioMsg.audio_data);
             const url = URL.createObjectURL(blob);
             audioRef.current.src = url;
             
-            // 오디오 재생 완료 후 마이크 다시 활성화
+            // 오디오 재생 완료 후 음성 인식 다시 시작
             audioRef.current.onended = () => {
               console.log('✅ AI finished speaking');
               setIsAiSpeaking(false);
               canListenRef.current = true;
+              if (!isMuted) {
+                SpeechRecognition.startListening({ 
+                  language: 'ko-KR', 
+                  continuous: true 
+                });
+              }
             };
             
             await audioRef.current.play().catch(err => {
               console.error('Audio play failed:', err);
               setIsAiSpeaking(false);
               canListenRef.current = true;
+              if (!isMuted) {
+                SpeechRecognition.startListening({ 
+                  language: 'ko-KR', 
+                  continuous: true 
+                });
+              }
             });
           }
         });
@@ -123,7 +196,7 @@ export default function Calling() {
           console.log('📨 WebSocket message:', msg);
         });
 
-        await startRecording(ws);
+        await startMicrophone();
       } catch (error) {
         console.error('❌ Failed to start call:', error);
         
@@ -150,11 +223,12 @@ export default function Calling() {
         wsRef.current.stopListening();
         wsRef.current.close();
       }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
+      SpeechRecognition.stopListening();
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
       }
     };
   }, [characterId, navigate]);
@@ -177,8 +251,8 @@ export default function Calling() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // 마이크 설정 및 음성 감지 시작
-  const startRecording = async (ws: CallWebSocket) => {
+  // 마이크 권한 요청 및 음성 인식 시작
+  const startMicrophone = async () => {
     try {
       console.log('🎤 Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -192,149 +266,19 @@ export default function Calling() {
       audioStreamRef.current = stream;
       console.log('✅ Microphone access granted');
 
-      // Web Audio API로 음성 감지 설정
-      const audioContext = new AudioContext();
-      const source = audioContext.createMediaStreamSource(stream);
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser);
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      // 음성 레벨 감지
-      const checkAudioLevel = () => {
-        analyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-
-        // 주기적으로 레벨 로그 (디버깅용)
-        if (Math.random() < 0.01) { // 1% 확률로 로그
-          console.log(`🔊 Audio level: ${average.toFixed(2)}, canListen: ${canListenRef.current}, recording: ${mediaRecorderRef.current?.state}`);
-        }
-
-        // AI가 말하는 중이면 녹음 시작 안 함
-        if (!canListenRef.current) {
-          requestAnimationFrame(checkAudioLevel);
-          return;
-        }
-
-        // 음성이 감지되면 녹음 시작
-        if (average > 10 && !mediaRecorderRef.current) {
-          console.log(`🎤 Voice detected! Level: ${average.toFixed(2)}`);
-          startRecordingChunk(stream, ws);
-        }
-
-        if (mediaRecorderRef.current?.state === 'recording') {
-          // 침묵 감지 (2초)
-          if (average < 10) {
-            if (!silenceTimeoutRef.current) {
-              console.log('🤫 Silence detected, will stop in 2 seconds...');
-              silenceTimeoutRef.current = window.setTimeout(() => {
-                stopRecordingAndSend(ws);
-              }, 2000);
-            }
-          } else {
-            // 음성 재감지 시 타이머 리셋
-            if (silenceTimeoutRef.current) {
-              console.log('🗣️ Voice resumed, canceling silence timer');
-              clearTimeout(silenceTimeoutRef.current);
-              silenceTimeoutRef.current = null;
-            }
-          }
-        }
-
-        requestAnimationFrame(checkAudioLevel);
-      };
-
-      checkAudioLevel();
-      ws.startListening('ko-KR', 48000);
-      console.log('🚀 Voice detection started');
+      // 음성 인식 시작
+      if (wsRef.current) {
+        wsRef.current.startListening('ko-KR', 48000);
+      }
+      
+      SpeechRecognition.startListening({ 
+        language: 'ko-KR', 
+        continuous: true 
+      });
+      console.log('🚀 Speech recognition started');
     } catch (error) {
-      console.error('❌ Failed to start recording:', error);
+      console.error('❌ Failed to start microphone:', error);
       alert('마이크 접근 권한이 필요합니다.');
-    }
-  };
-
-  // 녹음 청크 시작
-  const startRecordingChunk = (stream: MediaStream, ws: CallWebSocket) => {
-    if (mediaRecorderRef.current) return;
-
-    console.log('🎙️ Recording started');
-    setIsRecording(true);
-    audioChunksRef.current = [];
-
-    // 브라우저가 지원하는 오디오 형식 찾기
-    const mimeTypes = [
-      'audio/webm;codecs=opus',
-      'audio/webm',
-      'audio/ogg;codecs=opus',
-      'audio/mp4',
-    ];
-    
-    const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
-    console.log('🎵 Using MIME type:', supportedMimeType);
-
-    const mediaRecorder = new MediaRecorder(stream, {
-      mimeType: supportedMimeType,
-      audioBitsPerSecond: 128000,
-    });
-    mediaRecorderRef.current = mediaRecorder;
-
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        audioChunksRef.current.push(event.data);
-      }
-    };
-
-    mediaRecorder.onstop = async () => {
-      console.log('⏹️ Recording stopped');
-      setIsRecording(false);
-      
-      if (audioChunksRef.current.length > 0) {
-        const mimeType = mediaRecorder.mimeType;
-        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        console.log(`📤 Audio recorded: ${audioBlob.size} bytes, type: ${mimeType}`);
-        
-        if (!ws.isConnected()) {
-          console.error('❌ WebSocket not connected');
-        } else {
-          try {
-            // ElevenLabs STT로 음성을 텍스트로 변환
-            console.log('🎯 Transcribing with ElevenLabs STT...');
-            const transcribedText = await elevenLabsApi.speechToText(audioBlob);
-            console.log('✅ Transcription result:', transcribedText);
-            
-            if (transcribedText.trim()) {
-              // 텍스트를 WebSocket으로 전송
-              ws.sendTextInput(transcribedText);
-              setTranscription(transcribedText);
-            } else {
-              console.warn('⚠️ Empty transcription result');
-            }
-          } catch (error) {
-            console.error('❌ STT failed:', error);
-          }
-        }
-        
-        audioChunksRef.current = [];
-      } else {
-        console.warn('⚠️ No audio chunks recorded');
-      }
-      
-      mediaRecorderRef.current = null;
-    };
-
-    mediaRecorder.start();
-  };
-
-  // 녹음 중지 및 전송
-  const stopRecordingAndSend = (_ws: CallWebSocket) => {
-    if (silenceTimeoutRef.current) {
-      clearTimeout(silenceTimeoutRef.current);
-      silenceTimeoutRef.current = null;
-    }
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop();
     }
   };
 
@@ -374,23 +318,44 @@ export default function Calling() {
         track.enabled = isMuted;
       });
     }
+    
+    // 음소거 토글
+    if (isMuted) {
+      // 음소거 해제 - 음성 인식 시작
+      SpeechRecognition.startListening({ 
+        language: 'ko-KR', 
+        continuous: true 
+      });
+    } else {
+      // 음소거 - 음성 인식 중지
+      SpeechRecognition.stopListening();
+      resetTranscript();
+    }
   };
 
   const handleToggleSpeaker = () => {
     setIsSpeakerOn(!isSpeakerOn);
   };
 
-  const handleStopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      console.log('⏹️ User stopped recording');
-      mediaRecorderRef.current.stop();
-      audioChunksRef.current = []; // 녹음 데이터 버리기
-      
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-        silenceTimeoutRef.current = null;
-      }
+  const handleStopListening = () => {
+    console.log('⏹️ User stopped listening');
+    
+    // 침묵 타이머 정리
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
     }
+    
+    // 현재 transcript가 있으면 전송
+    if (transcript && transcript !== lastSentTranscriptRef.current) {
+      console.log('📤 Sending before stop:', transcript);
+      wsRef.current?.sendTextInput(transcript);
+      lastSentTranscriptRef.current = transcript;
+      setTranscription(transcript);
+    }
+    
+    SpeechRecognition.stopListening();
+    resetTranscript();
   };
 
   return (
@@ -448,12 +413,12 @@ export default function Calling() {
           </p>
 
           {/* 실시간 전사 및 AI 응답 표시 */}
-          {(transcription || aiResponse || isRecording || isAiSpeaking) && (
+          {(transcription || aiResponse || listening || isAiSpeaking) && (
             <div className="mt-8 px-8 max-w-md">
-              {isRecording && (
+              {listening && !isAiSpeaking && (
                 <div className="bg-red-500 bg-opacity-30 backdrop-blur-sm rounded-2xl p-4 mb-3 animate-pulse">
                   <p className="text-[14px] text-white opacity-90">
-                    <span className="font-semibold">🎙️ 녹음 중...</span>
+                    <span className="font-semibold">🎙️ 듣는 중...</span>
                   </p>
                 </div>
               )}
@@ -517,13 +482,13 @@ export default function Calling() {
               </span>
             </div>
 
-            {/* 녹음 중단 버튼 (녹음 중일 때만 표시) */}
-            {isRecording && (
+            {/* 녹음 중단 버튼 (듣는 중일 때만 표시) */}
+            {listening && !isAiSpeaking && (
               <div className="flex flex-col items-center gap-2">
                 <button
-                  onClick={handleStopRecording}
+                  onClick={handleStopListening}
                   className="w-14 h-14 bg-red-500 rounded-full flex items-center justify-center transition-all shadow-lg hover:bg-red-600 active:scale-95 animate-pulse"
-                  aria-label="녹음 중단"
+                  aria-label="듣기 중단"
                 >
                   <div className="w-4 h-4 bg-white rounded-sm" />
                 </button>
