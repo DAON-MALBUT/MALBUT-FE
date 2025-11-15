@@ -1,14 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MobileLayout from '@/layouts/mobile';
+import { characterApi } from '@/api/client';
 
 interface Character {
-  id: number;
+  id: string;
   name: string;
   image: string;
   relationship: string;
   phone: string;
   birthDate: string;
+  voice_id: string;
+  personality?: string;
+  createdAt?: string;
 }
 
 // 초성 추출 함수
@@ -25,24 +29,34 @@ const getChosung = (str: string): string => {
 export default function CharacterList() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [characters] = useState<Character[]>([
-    {
-      id: 3,
-      name: '나조하민',
-      image: '',
-      relationship: '본인',
-      phone: '010-1111-2222',
-      birthDate: '1990.01.01',
-    },
-    {
-      id: 4,
-      name: '다나카',
-      image: '',
-      relationship: '친구',
-      phone: '010-3333-4444',
-      birthDate: '1985.07.15',
-    },
-  ]);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadCharacters = async () => {
+      try {
+        const response = await characterApi.listCharacters();
+        const mappedCharacters: Character[] = response.map((char) => ({
+          id: char.character_id,
+          name: char.name,
+          image: '',
+          relationship: char.description || '',
+          phone: '',
+          birthDate: '',
+          voice_id: char.voice_id || '',
+          personality: char.personality_traits?.join(', '),
+          createdAt: char.created_at,
+        }));
+        setCharacters(mappedCharacters);
+      } catch (error) {
+        console.error('Failed to load characters:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCharacters();
+  }, []);
 
   // 검색 필터링
   const filteredCharacters = useMemo(() => {
@@ -71,9 +85,20 @@ export default function CharacterList() {
       }, {} as { [key: string]: Character[] });
   }, [filteredCharacters]);
 
-  const handleCharacterClick = (characterId: number) => {
+  const handleCharacterClick = (characterId: string) => {
     console.log('캐릭터 상세:', characterId);
-    // TODO: 캐릭터 상세 페이지로 이동
+  };
+
+  const handleCall = (character: Character) => {
+    navigate('/calling', {
+      state: {
+        characterId: character.id,
+        characterName: character.name,
+        characterImage: character.image,
+        phoneNumber: character.phone,
+        voiceId: character.voice_id,
+      }
+    });
   };
 
   const handleAddCharacter = () => {
@@ -104,25 +129,29 @@ export default function CharacterList() {
           </div>
         </div>
 
-        {/* 나(본인) 섹션 */}
-        <div className="mb-6">
+        {/* 나(본인) 섹션 - 제거 또는 숨김 */}
+        {/* <div className="mb-6">
           <div className="border-b-2 border-[#AAAAAA] border-opacity-40 pb-4">
             <button
-              onClick={() => handleCharacterClick(3)}
+              onClick={() => handleCharacterClick('me')}
               className="w-full flex items-center gap-4 px-0 py-3 hover:bg-gray-50 transition-colors rounded-lg active:scale-98"
             >
-          
-              {/* 이름 */}
               <span className="text-[20px] font-bold text-[#111111]">
                 나(조하민)
               </span>
             </button>
           </div>
-        </div>
+        </div> */}
 
         {/* 친구 목록 */}
         <div className="flex-1 overflow-y-auto pb-4">
-          {Object.keys(groupedCharacters).length === 0 ? (
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <p className="text-[20px] text-[#AAAAAA] mb-6">
+                로딩 중...
+              </p>
+            </div>
+          ) : Object.keys(groupedCharacters).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
               <p className="text-[20px] text-[#AAAAAA] mb-6">
                 검색 결과가 없습니다
@@ -139,10 +168,9 @@ export default function CharacterList() {
                 {/* 캐릭터 리스트 */}
                 <div className="space-y-0">
                   {chars.map((character, index) => (
-                    <button
+                    <div
                       key={character.id}
-                      onClick={() => handleCharacterClick(character.id)}
-                      className={`w-full flex items-center gap-4 px-0 py-4 hover:bg-gray-50 transition-colors rounded-lg active:scale-98 ${
+                      className={`w-full flex items-center gap-4 px-0 py-4 ${
                         index !== chars.length - 1
                           ? 'border-b-2 border-[#AAAAAA] border-opacity-40'
                           : ''
@@ -164,10 +192,29 @@ export default function CharacterList() {
                       </div>
 
                       {/* 이름 */}
-                      <span className="text-[20px] font-bold text-[#111111]">
-                        {character.name}
-                      </span>
-                    </button>
+                      <button
+                        onClick={() => handleCharacterClick(character.id)}
+                        className="flex-1 text-left"
+                      >
+                        <span className="text-[20px] font-bold text-[#111111]">
+                          {character.name}
+                        </span>
+                      </button>
+
+                      {/* 전화 버튼 */}
+                      <button
+                        onClick={() => handleCall(character)}
+                        className="w-10 h-10 bg-[#22C55E] rounded-full flex items-center justify-center hover:bg-[#16A34A] transition-all active:scale-95 shadow-md"
+                        aria-label="전화 걸기"
+                      >
+                        <img
+                          src="/icon/call.svg"
+                          alt="전화"
+                          className="w-5 h-5"
+                          style={{ filter: 'brightness(0) invert(1)' }}
+                        />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
