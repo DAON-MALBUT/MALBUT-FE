@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import MobileLayout from '@/layouts/mobile';
-import { callApi, characterApi, apiClient } from '@/api/client';
-import { CallWebSocket, arrayBufferToBase64, base64ToBlob } from '@/utils/websocket';
+import { callApi, characterApi, apiClient, elevenLabsApi } from '@/api/client';
+import { CallWebSocket, base64ToBlob } from '@/utils/websocket';
 import type { 
   TranscriptionMessage, 
   AIResponseTextMessage, 
@@ -292,29 +292,32 @@ export default function Calling() {
       if (audioChunksRef.current.length > 0) {
         const mimeType = mediaRecorder.mimeType;
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        console.log(`📤 Preparing to send audio: ${audioBlob.size} bytes, ${audioChunksRef.current.length} chunks, type: ${mimeType}`);
+        console.log(`📤 Audio recorded: ${audioBlob.size} bytes, type: ${mimeType}`);
         
         if (!ws.isConnected()) {
-          console.error('❌ WebSocket not connected, cannot send audio');
+          console.error('❌ WebSocket not connected');
         } else {
-          const arrayBuffer = await audioBlob.arrayBuffer();
-          const base64Data = arrayBufferToBase64(arrayBuffer);
-          console.log(`✅ Audio converted to base64: ${base64Data.length} characters`);
-          
-          // 오디오 메타데이터와 함께 전송
-          console.log('📡 Sending with metadata:', {
-            format: mimeType,
-            size: audioBlob.size,
-            duration: 'unknown',
-            sampleRate: 48000
-          });
-          
-          ws.sendAudioChunk(base64Data);
+          try {
+            // ElevenLabs STT로 음성을 텍스트로 변환
+            console.log('🎯 Transcribing with ElevenLabs STT...');
+            const transcribedText = await elevenLabsApi.speechToText(audioBlob);
+            console.log('✅ Transcription result:', transcribedText);
+            
+            if (transcribedText.trim()) {
+              // 텍스트를 WebSocket으로 전송
+              ws.sendTextInput(transcribedText);
+              setTranscription(transcribedText);
+            } else {
+              console.warn('⚠️ Empty transcription result');
+            }
+          } catch (error) {
+            console.error('❌ STT failed:', error);
+          }
         }
         
         audioChunksRef.current = [];
       } else {
-        console.warn('⚠️ No audio chunks to send');
+        console.warn('⚠️ No audio chunks recorded');
       }
       
       mediaRecorderRef.current = null;

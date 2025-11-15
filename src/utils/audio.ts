@@ -1,10 +1,15 @@
 export async function blobToWavBase64(blob: Blob, targetSampleRate = 16000): Promise<string> {
   const arrayBuffer = await blob.arrayBuffer();
-  const audioCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(1, 1, targetSampleRate);
 
   // Decode with a temporary AudioContext
   const decodeCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer.slice(0));
+  // Close the temporary context to avoid resource leaks
+  try {
+    await decodeCtx.close();
+  } catch (e) {
+    // some browsers may not support closing or may throw; ignore
+  }
 
   // Resample using OfflineAudioContext
   const channels = audioBuffer.numberOfChannels;

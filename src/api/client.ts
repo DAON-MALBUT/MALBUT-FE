@@ -64,6 +64,34 @@ export interface TextToSpeechRequest {
   use_cache?: boolean;
 }
 
+export const elevenLabsApi = {
+  speechToText: async (audioBlob: Blob): Promise<string> => {
+    const apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      throw new Error('VITE_ELEVENLABS_API_KEY is not set');
+    }
+
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.webm');
+    formData.append('model_id', 'eleven_multilingual_v2');
+
+    const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`ElevenLabs STT failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.text || '';
+  },
+};
+
 export const voiceApi = {
   cloneVoice: async (data: VoiceCloneRequest): Promise<VoiceResponse> => {
     const formData = new FormData();

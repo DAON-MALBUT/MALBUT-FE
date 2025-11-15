@@ -22,6 +22,12 @@ export interface TextInputMessage extends WebSocketMessage {
   text: string;
 }
 
+export interface AudioInputMessage extends WebSocketMessage {
+  type: 'audio_input';
+  data: string;
+  format?: string;
+}
+
 export interface TranscriptionMessage extends WebSocketMessage {
   type: 'transcription';
   text: string;
@@ -68,9 +74,6 @@ export type IncomingMessage =
 export class CallWebSocket {
   private ws: WebSocket | null = null;
   private messageHandlers: Map<string, ((msg: IncomingMessage) => void)[]> = new Map();
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 3;
-  private reconnectDelay = 1000;
   private baseUrl: string;
 
   constructor(baseUrl: string) {
@@ -86,8 +89,7 @@ export class CallWebSocket {
         this.ws = new WebSocket(fullUrl);
 
         this.ws.onopen = () => {
-          console.log('✅ WebSocket connected successfully');
-          this.reconnectAttempts = 0;
+          console.log('✅ WebSocket connected');
           resolve();
         };
 
@@ -109,15 +111,10 @@ export class CallWebSocket {
         };
 
         this.ws.onclose = (event) => {
-          console.log('🔌 WebSocket closed:', {
-            code: event.code,
-            reason: event.reason,
-            wasClean: event.wasClean
-          });
-          
-          // 정상 종료가 아니면 재연결 시도
-          if (!event.wasClean && this.reconnectAttempts === 0) {
-            reject(new Error(`WebSocket closed unexpectedly: ${event.reason || event.code}`));
+          console.log('🔌 WebSocket closed:', event.code, event.reason);
+          if (!event.wasClean) {
+            console.error('❌ WebSocket connection closed unexpectedly');
+            reject(new Error(`Connection closed: ${event.code} - ${event.reason}`));
           }
         };
 
@@ -136,15 +133,7 @@ export class CallWebSocket {
     });
   }
 
-  private handleReconnect(sessionId: string) {
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts++;
-      console.log(`Reconnecting... Attempt ${this.reconnectAttempts}`);
-      setTimeout(() => {
-        this.connect(sessionId);
-      }, this.reconnectDelay * this.reconnectAttempts);
-    }
-  }
+
 
   private handleMessage(message: IncomingMessage) {
     const handlers = this.messageHandlers.get(message.type);
@@ -195,27 +184,48 @@ export class CallWebSocket {
     this.send({ type: 'stop_listening' });
   }
 
-  sendAudioChunk(data: string) {
-    const message = {
-      type: 'audio_chunk',
-      data,
-      timestamp: new Date().toISOString(),
-    } as AudioChunkMessage;
-    console.log('📡 Sending audio_chunk:', {
-      type: message.type,
-      dataLength: data.length,
-      isBase64: /^[A-Za-z0-9+/]+=*$/.test(data),
-      sample: data.substring(0, 50) + '...',
-      timestamp: message.timestamp
-    });
-    this.send(message);
-  }
-
   sendTextInput(text: string) {
+    if (!this.ws) return;
+    
+    console.log('📤 Sending text input:', text);
+    
     this.send({
       type: 'text_input',
-      text,
-    } as TextInputMessage);
+      text: text
+    });
+  }
+  
+  sendAudioInput(data: string, format: string = 'wav') {
+    if (!this.ws) return;
+    
+    console.log('📤 Sending full audio input:', {
+      format,
+      dataLength: data.length
+    });
+    
+    this.send({
+      type: 'audio_input',
+      data: data,
+      format: format
+    });
+  }
+  
+  // Legacy audio chunk method (kept for reference, but text_input is now preferred)
+  sendAudioChunk(data: string) {
+    if (!this.ws) return;
+    
+    const isBase64 = /^[A-Za-z0-9+/=]+$/.test(data);
+    console.log('📤 Sending audio chunk:', {
+      isBase64,
+      length: data.length,
+      preview: data.substring(0, 50) + '...'
+    });
+    
+    this.send({
+      type: 'audio_chunk',
+      data: data,
+      timestamp: Date.now()
+    });
   }
 
   close() {
