@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MobileLayout from '@/layouts/mobile';
 import Input from '@/components/input';
 import Dropdown from '@/components/dropdown';
 import Button from '@/components/button';
 
 export default function SignupInfo() {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: '',
     birthDate: '',
@@ -44,8 +46,14 @@ export default function SignupInfo() {
   };
 
   const handleSubmit = () => {
-    console.log('제출:', formData, profileImage);
-    // 여기에 제출 로직 추가
+    const userInfo = {
+      ...formData,
+      profileImage,
+      createdAt: new Date().toISOString(),
+    };
+    localStorage.setItem('userInfo', JSON.stringify(userInfo));
+    console.log('회원가입 완료:', userInfo);
+    navigate('/home');
   };
 
   const isFormValid = formData.name && formData.birthDate && formData.phone;
