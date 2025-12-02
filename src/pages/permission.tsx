@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MobileLayout from '@/layouts/mobile';
 import Button from '@/components/button';
 
 export default function Permission() {
+  const navigate = useNavigate();
   const [isAgreed, setIsAgreed] = useState(false);
   const [expandedItems, setExpandedItems] = useState<number[]>([]);
   const [permissionStatus, setPermissionStatus] = useState<Record<string, string>>({});
@@ -83,8 +85,8 @@ export default function Permission() {
 
   const handleStart = () => {
     if (isAgreed) {
-      console.log('권한 동의 완료 - 다음 페이지로 이동');
-      // 라우팅 추가
+      localStorage.setItem('hasVisited', 'true');
+      navigate('/signup');
     } else {
       alert('개인정보 처리 방침에 동의해주세요.');
     }
